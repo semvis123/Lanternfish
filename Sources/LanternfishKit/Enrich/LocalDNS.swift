@@ -241,20 +241,23 @@ public enum LocalDNS {
             packets.append((ip, llmnrPort, ptrQuery(ip, id: nextID())))
         }
         let replies = await UDPBatch.exchange(packets, interfaceAddress: interfaceAddress, timeout: timeout)
-        return names(from: replies, wanted: Set(ips), dnsServers: Set(dnsServers))
+        let sentIDs = Set(packets.compactMap { transactionID($0.data) })
+        return names(from: replies, wanted: Set(ips), dnsServers: Set(dnsServers), sentIDs: sentIDs)
     }
 
     /// Sorts replies into per-host names. Router DNS answers are trusted for any host (that's
     /// their job). LLMNR is unicast to each host, so only the host's own answer counts. mDNS
     /// answers from the host itself win; answers about it from other senders (e.g. a Bonjour
     /// sleep proxy) are used only when the host didn't answer for itself.
+    /// Replies whose transaction ID isn't one we sent are ignored, when `sentIDs` is given.
     static func names(
         from replies: [UDPBatch.Reply], wanted: Set<IPv4Address>,
-        dnsServers: Set<IPv4Address>
+        dnsServers: Set<IPv4Address>, sentIDs: Set<UInt16>? = nil
     ) -> [IPv4Address: [LocalNameSource: String]] {
         var out: [IPv4Address: [LocalNameSource: String]] = [:]
         var proxied: [IPv4Address: String] = [:]
         for reply in replies {
+            if let sentIDs, let id = transactionID(reply.data), !sentIDs.contains(id) { continue }
             let source: LocalNameSource
             switch reply.port {
             case dnsPort where dnsServers.contains(reply.from): source = .routerDNS
@@ -277,6 +280,15 @@ public enum LocalDNS {
             out[ip, default: [:]][.mdns] = name
         }
         return out
+    }
+}
+
+extension LocalDNS {
+    /// The 16-bit ID at the start of a DNS, mDNS or LLMNR message.
+    static func transactionID(_ message: Data) -> UInt16? {
+        guard message.count >= 2 else { return nil }
+        let start = message.startIndex
+        return UInt16(message[start]) << 8 | UInt16(message[start + 1])
     }
 }
 
@@ -338,9 +350,11 @@ enum UDPBatch {
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 
         var replies: [Reply] = []
+        // Replies kept per batch: a few per query is plenty; anything beyond is noise or a flood.
+        let maxReplies = max(64, packets.count * 4)
         var buffer = [UInt8](repeating: 0, count: 9000)
         func drain() {
-            while true {
+            while replies.count < maxReplies {
                 var from = sockaddr_in()
                 var len = socklen_t(MemoryLayout<sockaddr_in>.size)
                 let n = buffer.withUnsafeMutableBytes { buf in

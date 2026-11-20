@@ -258,7 +258,13 @@ final class NewDeviceChime {
 private let alertsLogger = Logger(subsystem: "com.kriyak.lanternfish", category: "alerts")
 
 /// printf-style log line, visible in `log show --predicate 'subsystem == "com.kriyak.lanternfish"'`.
+/// Lines often hold device and network names, so release builds log them as private: they don't
+/// end up readable in the system log or in diagnostics people attach to bug reports.
 func alertsLog(_ format: String, _ args: any CVarArg...) {
     let message = String(format: format, arguments: args)
-    alertsLogger.notice("\(message, privacy: .public)")
+    #if DEBUG || LANTERNFISH_DEBUG_HOOKS
+        alertsLogger.notice("\(message, privacy: .public)")
+    #else
+        alertsLogger.notice("\(message, privacy: .private)")
+    #endif
 }

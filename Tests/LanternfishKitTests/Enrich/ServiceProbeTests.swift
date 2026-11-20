@@ -6,6 +6,15 @@ import Testing
 @testable import LanternfishKit
 
 @Suite struct ServiceProbeParsingTests {
+    @Test func redirectPortsOutsideTCPRangeAreRejected() {
+        #expect(ServiceProbe.port(of: URL(string: "http://192.168.1.1/")!) == 80)
+        #expect(ServiceProbe.port(of: URL(string: "https://192.168.1.1/")!) == 443)
+        #expect(ServiceProbe.port(of: URL(string: "http://192.168.1.1:8080/")!) == 8080)
+        // Foundation accepts these; converting them used to trap.
+        #expect(ServiceProbe.port(of: URL(string: "http://192.168.1.1:99999/")!) == nil)
+        #expect(ServiceProbe.port(of: URL(string: "http://192.168.1.1:4294967296/")!) == nil)
+    }
+
     // MARK: Banner display
 
     @Test func escapesBanner() {

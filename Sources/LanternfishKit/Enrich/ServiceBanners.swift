@@ -179,7 +179,7 @@ enum LANSession {
 }
 
 /// Trusts self-signed certificates for private-range IPv4 hosts only, never answers auth prompts,
-/// and follows at most 3 redirects that stay on private addresses.
+/// and follows at most 3 redirects that stay on the host that was asked.
 final class LANTrustDelegate: NSObject, URLSessionTaskDelegate, Sendable {
     private static let maxRedirects = 3
     /// Redirects followed so far, per task.
@@ -194,7 +194,9 @@ final class LANTrustDelegate: NSObject, URLSessionTaskDelegate, Sendable {
             r[task.taskIdentifier] = count
             return count
         }
-        guard n <= Self.maxRedirects, let host = request.url?.host, Self.isPrivateIPv4(host) else { return nil }
+        guard n <= Self.maxRedirects, let host = request.url?.host, Self.isPrivateIPv4(host),
+            host == task.originalRequest?.url?.host
+        else { return nil }
         return request
     }
 

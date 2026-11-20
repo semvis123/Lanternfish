@@ -114,6 +114,16 @@ import Testing
         #expect(proxied[host] == [.mdns: "Sleepy-Mac"])
     }
 
+    @Test func ignoresRepliesToQueriesWeDidNotSend() {
+        let host = IPv4Address("10.0.0.20")!
+        let router = IPv4Address("10.0.0.1")!
+        let forged = UDPBatch.Reply(
+            from: router, port: 53, data: Self.response(id: 999, ip: "10.0.0.20", target: "forged"))
+        let real = UDPBatch.Reply(from: router, port: 53, data: Self.response(id: 7, ip: "10.0.0.20", target: "laptop"))
+        let names = LocalDNS.names(from: [forged, real], wanted: [host], dnsServers: [router], sentIDs: [7])
+        #expect(names[host] == [.routerDNS: "laptop"])
+    }
+
     @Test(.timeLimit(.minutes(1))) func batchExchangeStopsWhenCancelled() async {
         // Nothing answers on this port: without cancellation support it would wait the full 20 s.
         let clock = ContinuousClock()

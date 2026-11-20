@@ -3,6 +3,14 @@ import Testing
 @testable import LanternfishKit
 
 @Suite struct ModelsTests {
+    @Test func subnetContains() {
+        let net = Subnet(address: IPv4Address("192.168.1.12")!, prefixLength: 24)
+        #expect(net.contains(IPv4Address("192.168.1.200")!))
+        #expect(!net.contains(IPv4Address("192.168.2.1")!))
+        #expect(!net.contains(IPv4Address("8.8.8.8")!))
+        #expect(Subnet(address: IPv4Address("10.0.0.1")!, prefixLength: 0).contains(IPv4Address("8.8.8.8")!))
+    }
+
     @Test func ipParsesAndPrints() {
         #expect(IPv4Address("192.168.1.12")?.description == "192.168.1.12")
         #expect(IPv4Address("192.168.1") == nil)

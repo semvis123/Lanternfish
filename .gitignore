@@ -3,3 +3,13 @@ build/
 .swiftpm/
 *.xcodeproj/
 .DS_Store
+xcuserdata/
+DerivedData/
+__pycache__/
+# Signing material and secrets must never be committed.
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+.env
+.env.*

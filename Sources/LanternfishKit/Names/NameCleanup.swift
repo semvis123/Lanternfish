@@ -104,9 +104,33 @@ public enum NameCleanup {
         }
     }
 
+    /// Longest name or label kept from a device.
+    public static let maxTextLength = 80
+
+    /// Makes device-supplied text safe to show: drops control and format characters (line breaks,
+    /// bidi overrides that could fake a different IP or a second notification line), collapses
+    /// whitespace and caps the length. Nil when nothing is left.
+    public static func displayText(_ s: String, maxLength: Int = maxTextLength) -> String? {
+        let scalars = s.unicodeScalars.map { u -> Unicode.Scalar in
+            // Zero-width (non-)joiners are format characters too, but emoji sequences need them.
+            if u.value == 0x200C || u.value == 0x200D { return u }
+            switch u.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator: return " "
+            default: return u
+            }
+        }
+        let cleaned = String(String.UnicodeScalarView(scalars))
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !cleaned.isEmpty else { return nil }
+        return cleaned.count > maxLength ? String(cleaned.prefix(maxLength - 1)) + "…" : cleaned
+    }
+
     /// Cleans a device in place. Also applied to history snapshots, which may hold names saved
     /// before these rules existed.
     public static func sanitize(_ d: inout Device) {
+        for field in [\Device.name, \.hostname, \.manufacturer, \.model, \.vendor, \.osHint, \.webTitle] {
+            d[keyPath: field] = d[keyPath: field].flatMap { displayText($0) }
+        }
         if let m = d.manufacturer { d.manufacturer = manufacturer(m) ?? m }
         if let m = d.model, model(m) != m { d.model = model(m) }
         if let n = d.name, !n.isEmpty {

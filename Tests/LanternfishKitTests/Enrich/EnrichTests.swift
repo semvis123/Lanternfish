@@ -137,6 +137,7 @@ import Testing
             BannerParser.metaRefreshTarget(#"<META HTTP-EQUIV=Refresh CONTENT='1;URL=https://10.0.0.1/'>"#)
                 == "https://10.0.0.1/")
         #expect(BannerParser.metaRefreshTarget("<meta charset=utf-8>") == nil)
+        #expect(BannerParser.metaRefreshTarget(#"<meta name="x"><meta http-equiv=refresh content="0;url=/a">"#) == "/a")
     }
 
     @Test(arguments: [
@@ -189,6 +190,30 @@ import Testing
         #expect(!LANTrustDelegate.isPrivateIPv4("172.32.0.1"))
         #expect(!LANTrustDelegate.isPrivateIPv4("8.8.8.8"))
         #expect(!LANTrustDelegate.isPrivateIPv4("example.com"))
+    }
+}
+
+@Suite(.timeLimit(.minutes(1))) struct HostileInputTests {
+    /// Pages are untrusted: a body of unclosed `<meta` tags must not make the parser backtrack.
+    @Test func metaRefreshStaysFastOnUnclosedTags() {
+        for body in [String(repeating: "<meta", count: 13_000), String(repeating: "<meta http-equiv=", count: 3_800)] {
+            let start = ContinuousClock.now
+            #expect(BannerParser.metaRefreshTarget(body) == nil)
+            #expect(ContinuousClock.now - start < .milliseconds(500))
+        }
+    }
+
+    @Test func deviceTextIsMadeSafeToShow() {
+        #expect(NameCleanup.displayText("Living Room\nTV") == "Living Room TV")
+        #expect(NameCleanup.displayText("evil\u{202E}gnp.exe") == "evil gnp.exe")
+        #expect(NameCleanup.displayText("  \t ") == nil)
+        #expect(NameCleanup.displayText("👨‍👩‍👧 Family iPad") == "👨‍👩‍👧 Family iPad")
+        let long = NameCleanup.displayText(String(repeating: "x", count: 5_000))
+        #expect(long?.count == NameCleanup.maxTextLength)
+        var device = Device(ip: IPv4Address("192.168.1.9")!)
+        device.name = "Printer\r\nFake second line"
+        NameCleanup.sanitize(&device)
+        #expect(device.name == "Printer Fake second line")
     }
 }
 

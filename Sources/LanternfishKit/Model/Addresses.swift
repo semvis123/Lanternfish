@@ -48,6 +48,12 @@ public struct Subnet: Sendable, Hashable, CustomStringConvertible {
         return "\(IPv4Address(address.value & mask))/\(prefixLength)"
     }
 
+    /// Whether `ip` is inside this network.
+    public func contains(_ ip: IPv4Address) -> Bool {
+        let mask: UInt32 = prefixLength == 0 ? 0 : ~UInt32(0) << (32 - prefixLength)
+        return ip.value & mask == address.value & mask
+    }
+
     /// Hosts to scan. Prefixes shorter than /24 are narrowed to the /24 containing `address`.
     /// Network and broadcast addresses are excluded for prefixes up to /30.
     public func scanHosts() -> [IPv4Address] {

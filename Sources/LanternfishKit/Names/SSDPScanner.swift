@@ -228,8 +228,7 @@ private final class DescriptionParserDelegate: NSObject, XMLParserDelegate {
         }
         // Only direct children of the root <device>.
         guard !rootClosed, deviceDepth == 1, elementStack.last == "device" else { return }
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
+        guard let value = NameCleanup.displayText(text) else { return }
         switch name {
         case "friendlyName": result.friendlyName = result.friendlyName ?? value
         case "manufacturer": result.manufacturer = result.manufacturer ?? value
@@ -248,15 +247,23 @@ public final class SSDPScanner: Sendable {
     /// Local address of the interface M-SEARCH multicasts leave from (nil: the system default,
     /// i.e. the primary interface). Needed to reach networks on secondary interfaces.
     public let interfaceAddress: IPv4Address?
+    /// Only responses from this network are used (nil: any private address). The UDP source
+    /// address is easy to spoof, so this keeps a LAN attacker from making us fetch "descriptions"
+    /// from arbitrary hosts.
+    public let subnet: Subnet?
+    /// Most devices handled per scan; a flood of spoofed responders can't grow work without bound.
+    static let maxDevices = 256
 
-    public init(interfaceAddress: IPv4Address? = nil) {
+    public init(interfaceAddress: IPv4Address? = nil, subnet: Subnet? = nil) {
         self.interfaceAddress = interfaceAddress
+        self.subnet = subnet
     }
 
     public func scan(duration: Duration = .seconds(3)) -> AsyncStream<DevicePatch> {
-        AsyncStream { [interfaceAddress] continuation in
+        AsyncStream { [interfaceAddress, subnet] continuation in
             let work = Task {
-                await Self.run(duration: duration, interfaceAddress: interfaceAddress, output: continuation)
+                await Self.run(
+                    duration: duration, interfaceAddress: interfaceAddress, subnet: subnet, output: continuation)
                 continuation.finish()
             }
             // Hard cap: discovery window plus 2 s for in-flight description fetches.
@@ -284,7 +291,7 @@ public final class SSDPScanner: Sendable {
     }
 
     private static func run(
-        duration: Duration, interfaceAddress: IPv4Address?,
+        duration: Duration, interfaceAddress: IPv4Address?, subnet: Subnet?,
         output: AsyncStream<DevicePatch>.Continuation
     ) async {
         guard let socket = UDPSocket.open(interfaceAddress: interfaceAddress) else { return }
@@ -345,6 +352,8 @@ public final class SSDPScanner: Sendable {
                 for await event in events {
                     switch event {
                     case .response(let ip, let headers):
+                        let inScope = subnet?.contains(ip) ?? LANTrustDelegate.isPrivateIPv4(ip.description)
+                        guard inScope, seen[ip] != nil || seen.count < maxDevices else { continue }
                         if let bambu = BambuSSDP.patch(ip: ip, headers: headers) {
                             if seen[ip]?.fetched != true {
                                 seen[ip] = Seen(fetched: true)
@@ -488,7 +497,8 @@ final class UDPSocket: Sendable {
     static func drain(_ fd: Int32) -> [(IPv4Address, String)] {
         var out: [(IPv4Address, String)] = []
         var buffer = [UInt8](repeating: 0, count: 8192)
-        while true {
+        // Bounded, so a flood of datagrams can't keep one drain call spinning.
+        for _ in 0..<256 {
             var from = sockaddr_in()
             var len = socklen_t(MemoryLayout<sockaddr_in>.size)
             let n = buffer.withUnsafeMutableBytes { buf in

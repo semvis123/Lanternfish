@@ -442,13 +442,23 @@ public enum BannerParser {
     }
 
     /// `<meta http-equiv="refresh" content="0; url=/ui/">` target, if any.
+    ///
+    /// Scans tag by tag instead of running one regex over the whole page: pages are untrusted, and
+    /// a pattern like `<meta[^>]+…[^>]*>` backtracks for seconds on a body of unclosed `<meta`s.
     public static func metaRefreshTarget(_ html: String) -> String? {
-        guard
-            let r = firstMatch(
-                #"<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]*>"#, in: html, options: [.caseInsensitive]),
-            let url = firstCapture(#"url\s*=\s*['"]?([^'">\s]+)"#, in: r)
-        else { return nil }
-        return url
+        let maxTag = 1024
+        var rest = html[...]
+        while let open = rest.range(of: "<meta", options: .caseInsensitive) {
+            let tail = rest[open.upperBound...]
+            let tag = tail.prefix(maxTag).prefix { $0 != ">" }
+            // Continue after this tag, so each character is looked at a bounded number of times.
+            rest = tail[tag.endIndex...]
+            guard tag.range(of: "http-equiv", options: .caseInsensitive) != nil,
+                tag.range(of: "refresh", options: .caseInsensitive) != nil
+            else { continue }
+            if let url = firstCapture(#"url\s*=\s*['"]?([^'">\s]+)"#, in: String(tag)) { return url }
+        }
+        return nil
     }
 
     // MARK: SSH

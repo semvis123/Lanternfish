@@ -11,6 +11,9 @@ CONFIG="${1:-release}"
 VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)}"
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+# Both end up in Info.plist; only accept plain version numbers (a tag name can contain < > &).
+[[ "$VERSION" =~ '^[0-9]+(\.[0-9]+){0,2}$' ]] || { echo "invalid VERSION: $VERSION" >&2; exit 1; }
+[[ "$BUILD_NUMBER" =~ '^[0-9]+$' ]] || { echo "invalid BUILD_NUMBER: $BUILD_NUMBER" >&2; exit 1; }
 SCRATCH="${SCRATCH:-.build/app}"
 # DEBUG_HOOKS=1 compiles in the LANTERNFISH_* env hooks (snapshots etc.); off by default in release.
 HOOK_FLAGS=()
@@ -66,5 +69,7 @@ $BONJOUR
 PLIST
 
 IDENTITY="${CODESIGN_IDENTITY:--}"
-codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
+# Hardened runtime: no DYLD_INSERT_LIBRARIES or unsigned libraries, so other code can't run inside
+# the app and borrow its Local Network and Location permissions. The app needs no exceptions.
+codesign --force --options runtime --sign "$IDENTITY" --timestamp=none "$APP"
 echo "Built $APP"

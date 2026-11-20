@@ -93,12 +93,14 @@ def clean(name: str) -> str:
     for rx, value in OVERRIDES:
         if rx.search(name):
             return value
+    original = name
     prev = None
     while prev != name:
         prev = name
         name = _suffix_re.sub("", name).strip(" ,.;-")
     if not name:
-        name = " ".join(prev.split())
+        # The whole name was suffixes (e.g. "Co., Ltd."): keep it rather than drop the vendor.
+        name = original
     return " ".join(titlecase_word(w) for w in name.split(" "))
 
 

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Builds Lanternfish and installs it as /Applications/Lanternfish.app, replacing any
-# existing copy atomically, then opens it.
+# existing copy (restoring it if the swap fails), then opens it.
 #
 #   ./scripts/install.sh             build (release), install, open
 #   ./scripts/install.sh --dry-run   print what would happen, change nothing
@@ -56,11 +56,16 @@ fi
 echo "==> Installing to $DEST"
 # Copy next to the destination first (same volume), so the swap below is a rename.
 run ditto "$BUILT" "$STAGING"
-run codesign --force --sign "$IDENTITY" --timestamp=none "$STAGING"
+run codesign --force --options runtime --sign "$IDENTITY" --timestamp=none "$STAGING"
 if [[ -e "$DEST" ]]; then
   OLD="$STAGING.old"
   run mv "$DEST" "$OLD"
-  run mv "$STAGING" "$DEST"
+  # Put the old app back if the new one can't take its place.
+  if ! run mv "$STAGING" "$DEST"; then
+    run mv "$OLD" "$DEST"
+    echo "Install failed; kept the previous version." >&2
+    exit 1
+  fi
   run rm -rf "$OLD"
 else
   run mv "$STAGING" "$DEST"

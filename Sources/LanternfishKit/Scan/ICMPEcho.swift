@@ -139,10 +139,11 @@ enum ICMPSocket {
         return false
     }
 
-    /// Reads every pending datagram, calling `handle` with the bytes and the source address.
+    /// Reads pending datagrams (at most 512 per call, so a flood can't keep it spinning), calling
+    /// `handle` with the bytes and the source address.
     static func drain(_ fd: Int32, _ handle: (ArraySlice<UInt8>, IPv4Address) -> Void) {
         var buffer = [UInt8](repeating: 0, count: 1500)
-        while true {
+        for _ in 0..<512 {
             var from = sockaddr_in()
             var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
             let n = withUnsafeMutablePointer(to: &from) {

@@ -197,7 +197,8 @@ public enum ServiceProbe {
                 break
             }
             guard info.responses.count <= maxRedirects, !visited.contains(next.absoluteString),
-                let host = next.host, host == ip.description || LANTrustDelegate.isPrivateIPv4(host),
+                // Only the probed device itself: a redirect must not make us request other LAN hosts.
+                next.host == ip.description,
                 next.scheme == "http" || next.scheme == "https",
                 let response = await fetchOnce(next, ip: ip)
             else {
@@ -210,11 +211,17 @@ public enum ServiceProbe {
         return info
     }
 
+    /// The URL's TCP port (default 80/443). A Location header can carry any number as the port, so
+    /// anything outside 0...65535 is nil (unfollowable) rather than a trap.
+    static func port(of url: URL) -> UInt16? {
+        UInt16(exactly: url.port ?? (url.scheme == "https" ? 443 : 80))
+    }
+
     /// One GET on a fresh connection to the URL's host (an IPv4 literal).
     private static func fetchOnce(_ url: URL, ip: IPv4Address) async -> HTTPResponseInfo? {
         guard let host = url.host.flatMap(IPv4Address.init) else { return nil }
         let https = url.scheme == "https"
-        let port = UInt16(url.port ?? (https ? 443 : 80))
+        guard let port = port(of: url) else { return nil }
         let conn = ProbeConnection(ip: host, port: port, tls: https ? TLSCapture(now: Date()) : nil)
         defer { conn.cancel() }
         guard case .success = await conn.open(timeout: connectTimeout) else { return nil }

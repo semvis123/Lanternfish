@@ -718,7 +718,9 @@ final class ScanStore {
             // 3. SSDP / UPnP.
             group.addTask { [weak self] in
                 // Multicast leaves via the primary interface unless told otherwise.
-                for await patch in SSDPScanner(interfaceAddress: iface.address).scan(duration: .seconds(3)) {
+                for await patch in SSDPScanner(interfaceAddress: iface.address, subnet: iface.subnet)
+                    .scan(duration: .seconds(3))
+                {
                     await self?.apply(patch, generation: gen)
                 }
             }
