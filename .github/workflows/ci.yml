@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, test and build
+    # Xcode 27 image: macOS 27, Swift 6.4, Apple silicon.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags and commit count feed the app version
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Lint
+        run: swift format lint --strict --recursive --parallel Sources Tests Package.swift
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: Build app
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export VERSION="${GITHUB_REF_NAME#v}"; fi
+          ./scripts/build-app.sh
+          plutil -p build/Lanternfish.app/Contents/Info.plist | grep -E 'CFBundle(ShortVersionString|Version)'
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent build/Lanternfish.app build/Lanternfish.zip
+          mkdir -p build/dmg && cp -R build/Lanternfish.app build/dmg/ && ln -s /Applications build/dmg/Applications
+          hdiutil create -volname Lanternfish -srcfolder build/dmg -fs HFS+ -format ULFO -ov build/Lanternfish.dmg
+          shasum -a 256 build/Lanternfish.zip build/Lanternfish.dmg | tee build/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Lanternfish-${{ github.sha }}
+          path: |
+            build/Lanternfish.zip
+            build/Lanternfish.dmg
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Lanternfish-${{ github.sha }}
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Lanternfish ${TAG#v}" --generate-notes --draft \
+            "dist/Lanternfish.dmg#Lanternfish ${TAG#v} (disk image)" \
+            "dist/Lanternfish.zip#Lanternfish ${TAG#v} (zip)" \
+            dist/SHA256SUMS.txt
