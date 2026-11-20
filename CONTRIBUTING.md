@@ -38,7 +38,8 @@ Before opening a pull request:
 
 - Engine code (scanning, parsing, naming, history) goes in `LanternfishKit` and gets unit tests. Keep it
   free of SwiftUI and AppKit.
-- App code goes in `Sources/Lanternfish`; feature windows live in `Sources/Lanternfish/Features`.
+- App code goes in `Sources/Lanternfish`, grouped by area (see the project layout in the README); each
+  feature window has its own folder in `Sources/Lanternfish/Features`. Tests mirror LanternfishKit's folders.
 - Comments explain *why*, not *what*. Doc comments for public `LanternfishKit` API.
 - Test fixtures use documentation addresses (`192.0.2.x`, `198.51.100.x`, `203.0.113.x`, MAC
   `00:00:5e:00:53:xx`) and made-up names, never data from a real network.
